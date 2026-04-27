@@ -1,8 +1,14 @@
 import anthropic, os
+import streamlit as st
 from dotenv import load_dotenv
 load_dotenv()
 
-client = anthropic.Anthropic(api_key=os.getenv("ANTHROPIC_API_KEY"))
+# Works locally (reads .env) AND on Streamlit Cloud (reads st.secrets)
+api_key = st.secrets.get("ANTHROPIC_API_KEY") if hasattr(st, "secrets") else None
+if not api_key:
+    api_key = os.getenv("ANTHROPIC_API_KEY")
+
+client = anthropic.Anthropic(api_key=api_key)
 
 SYSTEM = """You are a scientific writing assistant in microbiology.
 Write concise publication-ready Results paragraphs in formal academic
