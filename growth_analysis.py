@@ -116,7 +116,7 @@ def build_excel_growth_chart(time, od600, params, organism):
 
     x_obs = Reference(ws1, min_col=1, min_row=2, max_row=n_obs + 1)
     y_obs = Reference(ws1, min_col=2, min_row=1, max_row=n_obs + 1)
-    s_obs = Series(y_obs, x_obs, title="Observed OD600")
+    s_obs = Series(y_obs, x_obs)
     s_obs.marker.symbol = "circle"
     s_obs.marker.size = 7
     s_obs.graphicalProperties.line.noFill = True
@@ -124,7 +124,7 @@ def build_excel_growth_chart(time, od600, params, organism):
 
     x_fit = Reference(ws2, min_col=1, min_row=2, max_row=101)
     y_fit = Reference(ws2, min_col=2, min_row=1, max_row=101)
-    s_fit = Series(y_fit, x_fit, title="Gompertz Fit")
+    s_fit = Series(y_fit, x_fit)
     s_fit.marker.symbol = "none"
     s_fit.graphicalProperties.line.solidFill = "378ADD"
     chart.series.append(s_fit)
