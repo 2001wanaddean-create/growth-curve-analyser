@@ -70,3 +70,67 @@ def build_plotly_figure(time, od600, params, phases, organism):
     fig.update_xaxes(showgrid=True,gridcolor="#f0f0f0")
     fig.update_yaxes(showgrid=True,gridcolor="#f0f0f0")
     return fig
+
+
+def build_excel_growth_chart(time, od600, params, organism):
+    import io
+    from openpyxl import Workbook
+    from openpyxl.chart import ScatterChart, Reference, Series
+
+    wb = Workbook()
+
+    ws1 = wb.active
+    ws1.title = "Observed Data"
+    ws1["A1"], ws1["B1"] = "Time (hours)", "OD600 Observed"
+    for i, (t, od) in enumerate(zip(time, od600), start=2):
+        ws1.cell(i, 1, float(t))
+        ws1.cell(i, 2, float(od))
+
+    ws2 = wb.create_sheet("Gompertz Fit")
+    t_fit = np.linspace(min(time), max(time), 100)
+    od_fit = gompertz_model(t_fit, params["A"], params["mu_max"], params["lam"])
+    ws2["A1"], ws2["B1"] = "Time (hours)", "OD600 Fitted"
+    for i, (t, od) in enumerate(zip(t_fit, od_fit), start=2):
+        ws2.cell(i, 1, float(t))
+        ws2.cell(i, 2, float(od))
+
+    ws3 = wb.create_sheet("Parameters")
+    dt = round(float(np.log(2) / params["mu_max"]), 2) if params["mu_max"] > 0 else "N/A"
+    for row in [
+        ["Parameter", "Value"],
+        ["Organism", organism],
+        ["mu_max (h⁻¹)", round(float(params["mu_max"]), 4)],
+        ["Asymptote A (OD)", round(float(params["A"]), 4)],
+        ["Lag λ (hours)", round(float(params["lam"]), 4)],
+        ["Doubling time (h)", dt],
+    ]:
+        ws3.append(row)
+
+    n_obs = len(time)
+    chart = ScatterChart()
+    chart.title = f"Growth Curve — {organism}"
+    chart.style = 10
+    chart.xAxis.title = "Time (hours)"
+    chart.yAxis.title = "OD₆₀₀"
+    chart.width, chart.height = 24, 14
+
+    x_obs = Reference(ws1, min_col=1, min_row=2, max_row=n_obs + 1)
+    y_obs = Reference(ws1, min_col=2, min_row=1, max_row=n_obs + 1)
+    s_obs = Series(y_obs, x_obs, title_from_data=True)
+    s_obs.marker.symbol = "circle"
+    s_obs.marker.size = 7
+    s_obs.graphicalProperties.line.noFill = True
+    chart.series.append(s_obs)
+
+    x_fit = Reference(ws2, min_col=1, min_row=2, max_row=101)
+    y_fit = Reference(ws2, min_col=2, min_row=1, max_row=101)
+    s_fit = Series(y_fit, x_fit, title_from_data=True)
+    s_fit.marker.symbol = "none"
+    s_fit.graphicalProperties.line.solidFill = "378ADD"
+    chart.series.append(s_fit)
+
+    ws1.add_chart(chart, "D2")
+
+    buf = io.BytesIO()
+    wb.save(buf)
+    return buf.getvalue()

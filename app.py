@@ -2,20 +2,145 @@ import streamlit as st
 import pandas as pd
 import numpy as np
 import io
+import plotly.graph_objects as go
 
 from growth_analysis import (fit_growth_curve, detect_phases,
-    calc_doubling_time, build_plotly_figure)
-from ai_reporter import generate_interpretation, generate_discussion_points
+    calc_doubling_time, build_plotly_figure, build_excel_growth_chart)
+from ai_reporter import (generate_interpretation, generate_discussion_points,
+    generate_standard_curve_results)
 from standard_curve import (fit_standard_curve, calculate_unknown,
-    build_standard_curve_figure, ASSAY_PRESETS)
+    build_standard_curve_figure, build_excel_standard_chart, ASSAY_PRESETS)
 
 st.set_page_config(page_title="BioLab Analyser",
                    page_icon="🔬", layout="wide")
 
-st.title("🔬 BioLab Analyser")
-st.markdown("*Bacterial growth curve analysis · Standard curve builder · AI-written Results*")
+# ── Bacteria mascot SVG ──────────────────────────────────────────────────────
+MASCOT_SVG = """
+<div style="text-align:center; padding:4px 0 0 0;">
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 160" width="88" height="140">
+  <!-- flagellum -->
+  <path d="M50,50 C67,32 33,18 56,4"
+        stroke="#0e7a58" stroke-width="3.5" fill="none" stroke-linecap="round"/>
+  <!-- left pilus -->
+  <path d="M18,88 C4,73 2,57 9,46"
+        stroke="#0e7a58" stroke-width="2.5" fill="none" stroke-linecap="round"/>
+  <!-- right pilus -->
+  <path d="M82,88 C96,73 98,57 91,46"
+        stroke="#0e7a58" stroke-width="2.5" fill="none" stroke-linecap="round"/>
+  <!-- body shadow -->
+  <ellipse cx="52" cy="107" rx="36" ry="47" fill="#0e7a58" opacity="0.25"/>
+  <!-- body -->
+  <ellipse cx="50" cy="105" rx="36" ry="47" fill="#1D9E75"/>
+  <!-- shine highlight -->
+  <ellipse cx="37" cy="78" rx="11" ry="7" fill="rgba(255,255,255,0.22)"
+           transform="rotate(-20,37,78)"/>
+  <!-- left eye white -->
+  <circle cx="36" cy="90" r="10" fill="white"/>
+  <!-- right eye white -->
+  <circle cx="64" cy="90" r="10" fill="white"/>
+  <!-- left pupil -->
+  <circle cx="38" cy="89" r="6" fill="#1a1a2e"/>
+  <!-- right pupil -->
+  <circle cx="66" cy="89" r="6" fill="#1a1a2e"/>
+  <!-- eye shines -->
+  <circle cx="41" cy="86" r="2.5" fill="white"/>
+  <circle cx="69" cy="86" r="2.5" fill="white"/>
+  <!-- blush left -->
+  <ellipse cx="24" cy="100" rx="7" ry="4.5" fill="rgba(255,130,130,0.40)"/>
+  <!-- blush right -->
+  <ellipse cx="76" cy="100" rx="7" ry="4.5" fill="rgba(255,130,130,0.40)"/>
+  <!-- smile -->
+  <path d="M36,106 Q50,120 64,106"
+        stroke="#1a1a2e" stroke-width="2.5" fill="none" stroke-linecap="round"/>
+  <!-- membrane dots -->
+  <circle cx="44" cy="128" r="4"   fill="rgba(255,255,255,0.14)"/>
+  <circle cx="58" cy="136" r="3"   fill="rgba(255,255,255,0.14)"/>
+  <circle cx="36" cy="133" r="2.5" fill="rgba(255,255,255,0.14)"/>
+</svg>
+<p style="font-size:10px;color:#888;margin:0;font-style:italic;">Azospirella</p>
+</div>
+"""
+
+# ── Header ───────────────────────────────────────────────────────────────────
+col_title, col_mascot = st.columns([7, 1])
+with col_title:
+    st.title("🔬 BioLab Analyser")
+    st.markdown("*Bacterial growth curve analysis · Standard curve builder · AI-written Results*")
+with col_mascot:
+    st.markdown(MASCOT_SVG, unsafe_allow_html=True)
+
 st.divider()
 
+# ── Onboarding wizard ────────────────────────────────────────────────────────
+STEPS = [
+    ("👋 Welcome to BioLab Analyser!",
+     "This tool helps you analyse **bacterial growth curves** and build "
+     "**standard curves** — then writes a publication-ready Results section "
+     "using Claude AI, ready to paste straight into your thesis.\n\n"
+     "Click **Next →** for a 3-step quick-start guide, or **Skip** to jump right in."),
+    ("🧫 Step 1 — Choose your analysis mode",
+     "Use the radio buttons below the wizard to pick:\n\n"
+     "- **📈 Growth Curve Analysis** — upload OD₆₀₀ vs time data, fit a Gompertz "
+     "model, and extract μmax, doubling time, lag phase, and log phase automatically.\n"
+     "- **📉 Standard Curve Builder** — Bradford, IAA, TAN assays (or custom). "
+     "Enter standard points and calculate unknown sample concentrations."),
+    ("📤 Step 2 — Upload or enter your data",
+     "**Growth curve** — Excel or CSV with columns: `time_hours` and `OD600`\n\n"
+     "**Standard curve** — columns: `concentration` and `absorbance`\n\n"
+     "👉 Grab the **⬇ Sample Excel template** from the sidebar if you need a "
+     "starter file. You can also type data directly into the table."),
+    ("🤖 Step 3 — AI Results & Excel export",
+     "After your analysis:\n\n"
+     "- Click **✨ Generate Results paragraph** → Claude AI writes a formal "
+     "Results section you can copy straight into your thesis.\n"
+     "- Click **⬇ Download Excel chart** → get an editable `.xlsx` workbook "
+     "with your raw data **and** an embedded chart you can style in Excel — "
+     "no more screenshots!\n\nYou're all set. Happy analysing! 🎉"),
+]
+
+if "ob_done" not in st.session_state:
+    st.session_state.ob_done = False
+if "ob_step" not in st.session_state:
+    st.session_state.ob_step = 0
+
+if not st.session_state.ob_done:
+    step = st.session_state.ob_step
+    title, body = STEPS[step]
+    n_steps = len(STEPS)
+
+    with st.container(border=True):
+        # Progress dots
+        dots = "".join(
+            "🟢 " if i == step else "⚪ "
+            for i in range(n_steps)
+        )
+        st.caption(f"{dots}Step {step + 1} of {n_steps}")
+        st.markdown(f"### {title}")
+        st.markdown(body)
+
+        c_back, c_next, c_skip = st.columns([1, 1, 5])
+        with c_back:
+            if step > 0:
+                if st.button("← Back", key="ob_back"):
+                    st.session_state.ob_step -= 1
+                    st.rerun()
+        with c_next:
+            if step < n_steps - 1:
+                if st.button("Next →", type="primary", key="ob_next"):
+                    st.session_state.ob_step += 1
+                    st.rerun()
+            else:
+                if st.button("🚀 Let's go!", type="primary", key="ob_done"):
+                    st.session_state.ob_done = True
+                    st.rerun()
+        with c_skip:
+            if st.button("Skip tutorial", key="ob_skip"):
+                st.session_state.ob_done = True
+                st.rerun()
+
+    st.divider()
+
+# ── Mode selector ─────────────────────────────────────────────────────────────
 mode = st.radio(
     "**Select analysis mode:**",
     ["📈 Growth Curve Analysis", "📉 Standard Curve Builder"],
@@ -105,7 +230,6 @@ if mode == "📈 Growth Curve Analysis":
             with c1:
                 st.dataframe(df, use_container_width=True, height=250)
             with c2:
-                import plotly.graph_objects as go
                 fr = go.Figure()
                 fr.add_trace(go.Scatter(x=time, y=od600, mode="lines+markers",
                     line=dict(color="#1D9E75"), marker=dict(size=7)))
@@ -139,6 +263,20 @@ if mode == "📈 Growth Curve Analysis":
             st.metric("Max OD₆₀₀",     f"{max(od600):.3f}")
             st.download_button("⬇ Download CSV", df.to_csv(index=False),
                 f"{organism or 'data'}_growth.csv", "text/csv")
+
+        # ── Excel chart download ──────────────────────────────────────────
+        with st.spinner("Building Excel workbook..."):
+            xl_bytes = build_excel_growth_chart(
+                time, od600, params, organism or "Bacterial isolate")
+        st.download_button(
+            "📊 Download Excel chart (.xlsx)",
+            xl_bytes,
+            f"{organism or 'growth_curve'}_chart.xlsx",
+            "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+            help="Editable Excel workbook with raw data, fitted curve, parameters, "
+                 "and an embedded scatter chart you can style directly in Excel.",
+            use_container_width=True,
+        )
 
         st.divider()
         st.markdown("### 🤖 AI-Generated Results Section")
@@ -283,6 +421,20 @@ else:
                                          x_unit, y_unit, unknowns),
             use_container_width=True)
 
+        # ── Excel chart download ──────────────────────────────────────────
+        with st.spinner("Building Excel workbook..."):
+            xl_sc_bytes = build_excel_standard_chart(
+                conc, abso, fit, assay_choice, x_unit, y_unit, unknowns)
+        st.download_button(
+            "📊 Download Excel chart (.xlsx)",
+            xl_sc_bytes,
+            f"{assay_choice.replace(' ','_')}_chart.xlsx",
+            "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+            help="Editable Excel workbook with standard data, fitted curve, "
+                 "unknown samples, and an embedded scatter chart.",
+            use_container_width=True,
+        )
+
         # ── Results table ────────────────────────────────────────────────
         st.markdown("### 📋 Results summary table")
         res_df = pd.DataFrame([{
@@ -304,34 +456,23 @@ else:
                      use_container_width=True, key="sc_ai"):
             with st.spinner("Claude is writing your Results section..."):
                 try:
-                    api_key = (st.secrets.get("ANTHROPIC_API_KEY")
-                               if hasattr(st,"secrets") else None)
-                    if not api_key:
-                        import os; api_key = os.getenv("ANTHROPIC_API_KEY")
-                    import anthropic
-                    client = anthropic.Anthropic(api_key=api_key)
                     valid  = [r for r in unknowns if r["concentration"] is not None]
                     s_sum  = "\n".join([
                         f"{r['label']}: OD {r['absorbance']:.4f} → "
                         f"{r['concentration']} {x_unit}"
                         for r in valid]) if valid else ""
-                    prompt = f"""Write a Results paragraph for a standard curve:
-
-Assay: {assay_choice}
-Model: {fit['model']}, Equation: {fit['equation']}, R²: {r2:.4f}
-Concentration range: {min(conc):.2f}–{max(conc):.2f} {x_unit}
-Absorbance range: {min(abso):.4f}–{max(abso):.4f} {y_unit}
-Standard points: {len(conc)}
-{f"Unknown samples:{chr(10)}{s_sum}" if s_sum else ""}
-
-Third-person passive voice, 80–120 words, academic microbiology style.
-Include equation, R² value, and concentration range."""
-                    msg = client.messages.create(
-                        model="claude-sonnet-4-20250514", max_tokens=300,
-                        system=("You are a scientific writing assistant. Write "
-                                "publication-ready microbiology Results paragraphs."),
-                        messages=[{"role":"user","content":prompt}])
-                    txt = msg.content[0].text
+                    txt = generate_standard_curve_results(
+                        assay_name=assay_choice,
+                        model_type=fit["model"],
+                        equation=fit["equation"],
+                        r_squared=r2,
+                        conc_min=float(min(conc)), conc_max=float(max(conc)),
+                        x_unit=x_unit,
+                        abso_min=float(min(abso)), abso_max=float(max(abso)),
+                        y_unit=y_unit,
+                        n_points=len(conc),
+                        unknowns_summary=s_sum,
+                    )
                     st.success("Results paragraph — ready to paste into your thesis")
                     st.markdown(f"> {txt}")
                     st.download_button("📋 Save as .txt", txt,
