@@ -206,8 +206,8 @@ def build_excel_standard_chart(concentration, absorbance, fit_result,
     chart.title = "{} | {} | R2={:.4f}".format(
         assay_name, fit_result["equation"], fit_result["r_squared"])
     chart.style = 10
-    chart.xAxis.title = "Concentration ({})".format(x_unit)
-    chart.yAxis.title = "Absorbance ({})".format(y_unit)
+    chart.x_axis.title = "Concentration ({})".format(x_unit)
+    chart.y_axis.title = "Absorbance ({})".format(y_unit)
     chart.width = 24
     chart.height = 14
 
