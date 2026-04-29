@@ -75,62 +75,50 @@ def build_plotly_figure(time, od600, params, phases, organism):
 def build_excel_growth_chart(time, od600, params, organism):
     import io
     from openpyxl import Workbook
-    from openpyxl.chart import ScatterChart, Reference
-    from openpyxl.chart.series import SeriesFactory
+    from openpyxl.chart import LineChart, Reference
 
     wb = Workbook()
+    ws = wb.active
+    ws.title = "Growth Data"
 
-    ws1 = wb.active
-    ws1.title = "Observed Data"
-    ws1["A1"], ws1["B1"] = "Time (hours)", "OD600 Observed"
-    for i, (t, od) in enumerate(zip(time, od600), start=2):
-        ws1.cell(i, 1, float(t))
-        ws1.cell(i, 2, float(od))
+    od_fitted = gompertz_model(np.array(time), params["A"],
+                               params["mu_max"], params["lam"])
+    ws.append(["Time (h)", "OD600 Observed", "Gompertz Fit"])
+    for t, od, of_ in zip(time, od600, od_fitted):
+        ws.append([float(t), float(od), float(of_)])
 
-    ws2 = wb.create_sheet("Gompertz Fit")
-    t_fit = np.linspace(min(time), max(time), 100)
-    od_fit = gompertz_model(t_fit, params["A"], params["mu_max"], params["lam"])
-    ws2["A1"], ws2["B1"] = "Time (hours)", "OD600 Fitted"
-    for i, (t, od) in enumerate(zip(t_fit, od_fit), start=2):
-        ws2.cell(i, 1, float(t))
-        ws2.cell(i, 2, float(od))
-
-    ws3 = wb.create_sheet("Parameters")
+    ws_p = wb.create_sheet("Parameters")
     dt = round(float(np.log(2) / params["mu_max"]), 2) if params["mu_max"] > 0 else "N/A"
     for row in [
         ["Parameter", "Value"],
         ["Organism", organism],
-        ["mu_max (h⁻¹)", round(float(params["mu_max"]), 4)],
+        ["mu_max (h-1)", round(float(params["mu_max"]), 4)],
         ["Asymptote A (OD)", round(float(params["A"]), 4)],
-        ["Lag λ (hours)", round(float(params["lam"]), 4)],
+        ["Lag lambda (hours)", round(float(params["lam"]), 4)],
         ["Doubling time (h)", dt],
     ]:
-        ws3.append(row)
+        ws_p.append(row)
 
-    n_obs = len(time)
-    chart = ScatterChart()
-    chart.title = f"Growth Curve — {organism}"
+    n = len(time)
+    chart = LineChart()
+    chart.title = "Growth Curve - {}".format(organism)
     chart.style = 10
     chart.x_axis.title = "Time (hours)"
     chart.y_axis.title = "OD600"
     chart.width, chart.height = 24, 14
 
-    x_obs = Reference(ws1, min_col=1, min_row=2, max_row=n_obs + 1)
-    y_obs = Reference(ws1, min_col=2, min_row=1, max_row=n_obs + 1)
-    s_obs = SeriesFactory(y_obs, x_obs)
-    s_obs.marker.symbol = "circle"
-    s_obs.marker.size = 7
-    s_obs.graphicalProperties.line.noFill = True
-    chart.series.append(s_obs)
+    chart.add_data(Reference(ws, min_col=2, min_row=1, max_row=n + 1),
+                   titles_from_data=True)
+    chart.add_data(Reference(ws, min_col=3, min_row=1, max_row=n + 1),
+                   titles_from_data=True)
+    chart.set_categories(Reference(ws, min_col=1, min_row=2, max_row=n + 1))
 
-    x_fit = Reference(ws2, min_col=1, min_row=2, max_row=101)
-    y_fit = Reference(ws2, min_col=2, min_row=1, max_row=101)
-    s_fit = SeriesFactory(y_fit, x_fit)
-    s_fit.marker.symbol = "none"
-    s_fit.graphicalProperties.line.solidFill = "378ADD"
-    chart.series.append(s_fit)
+    chart.series[0].marker.symbol = "circle"
+    chart.series[0].marker.size = 7
+    chart.series[1].smooth = True
+    chart.series[1].marker.symbol = "none"
 
-    ws1.add_chart(chart, "D2")
+    ws.add_chart(chart, "E2")
 
     buf = io.BytesIO()
     wb.save(buf)

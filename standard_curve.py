@@ -1,11 +1,6 @@
-import io
 import numpy as np
 from scipy import stats
 import plotly.graph_objects as go
-from openpyxl import Workbook
-from openpyxl.chart import ScatterChart
-from openpyxl.chart.reference import Reference
-from openpyxl.chart.series import SeriesFactory
 
 
 def fit_standard_curve(concentration, absorbance, model_type="linear"):
@@ -150,92 +145,68 @@ def build_standard_curve_figure(concentration, absorbance,
 
 def build_excel_standard_chart(concentration, absorbance, fit_result,
                                 assay_name, x_unit, y_unit, unknowns=None):
+    import io
+    from openpyxl import Workbook
+    from openpyxl.chart import LineChart, Reference
+
     x = np.array(concentration, dtype=float)
     y = np.array(absorbance, dtype=float)
 
-    wb = Workbook()
-
-    ws1 = wb.active
-    ws1.title = "Standard Data"
-    ws1["A1"] = "Concentration ({})".format(x_unit)
-    ws1["B1"] = "Absorbance ({})".format(y_unit)
-    for i, (c, a) in enumerate(zip(x, y), start=2):
-        ws1.cell(i, 1, float(c))
-        ws1.cell(i, 2, float(a))
-
-    ws2 = wb.create_sheet("Fitted Curve")
-    x_sm = np.linspace(min(x), max(x) * 1.05, 100)
     if fit_result["model"] == "linear":
-        m = fit_result["params"]["slope"]
-        b = fit_result["params"]["intercept"]
-        y_sm = m * x_sm + b
+        m, b = fit_result["params"]["slope"], fit_result["params"]["intercept"]
+        y_fit = m * x + b
     else:
-        a_ = fit_result["params"]["a"]
-        b_ = fit_result["params"]["b"]
-        c_ = fit_result["params"]["c"]
-        y_sm = a_ * x_sm**2 + b_ * x_sm + c_
-    ws2["A1"] = "Concentration ({})".format(x_unit)
-    ws2["B1"] = "Absorbance ({}) fitted".format(y_unit)
-    for i, (c, a) in enumerate(zip(x_sm, y_sm), start=2):
-        ws2.cell(i, 1, float(c))
-        ws2.cell(i, 2, float(a))
+        a_, b_, c_ = (fit_result["params"]["a"], fit_result["params"]["b"],
+                      fit_result["params"]["c"])
+        y_fit = a_ * x**2 + b_ * x + c_
 
-    ws3 = wb.create_sheet("Parameters")
-    ws3.append(["Parameter", "Value"])
-    ws3.append(["Assay", assay_name])
-    ws3.append(["Model", fit_result["model"]])
-    ws3.append(["Equation", fit_result["equation"]])
-    ws3.append(["R2", round(fit_result["r_squared"], 6)])
+    wb = Workbook()
+    ws = wb.active
+    ws.title = "Standard Data"
+    ws.append(["Concentration ({})".format(x_unit),
+               "Absorbance ({})".format(y_unit),
+               "Fitted Curve"])
+    for c, a, f in zip(x, y, y_fit):
+        ws.append([float(c), float(a), float(f)])
 
-    has_unknowns = False
+    ws_p = wb.create_sheet("Parameters")
+    ws_p.append(["Parameter", "Value"])
+    ws_p.append(["Assay", assay_name])
+    ws_p.append(["Model", fit_result["model"]])
+    ws_p.append(["Equation", fit_result["equation"]])
+    ws_p.append(["R2", round(fit_result["r_squared"], 6)])
+
     if unknowns:
         valid = [u for u in unknowns if u["concentration"] is not None]
         if valid:
-            has_unknowns = True
-            ws4 = wb.create_sheet("Unknown Samples")
-            ws4.append([
-                "Sample",
-                "Absorbance ({})".format(y_unit),
-                "Concentration ({})".format(x_unit)
-            ])
+            ws_u = wb.create_sheet("Unknown Samples")
+            ws_u.append(["Sample",
+                          "Absorbance ({})".format(y_unit),
+                          "Concentration ({})".format(x_unit)])
             for u in valid:
-                ws4.append([u["label"], u["absorbance"], u["concentration"]])
+                ws_u.append([u["label"], u["absorbance"], u["concentration"]])
 
-    n_std = len(x)
-    chart = ScatterChart()
+    n = len(x)
+    chart = LineChart()
     chart.title = "{} | {} | R2={:.4f}".format(
         assay_name, fit_result["equation"], fit_result["r_squared"])
     chart.style = 10
     chart.x_axis.title = "Concentration ({})".format(x_unit)
     chart.y_axis.title = "Absorbance ({})".format(y_unit)
-    chart.width = 24
-    chart.height = 14
+    chart.width, chart.height = 24, 14
 
-    x_std = Reference(ws1, min_col=1, min_row=2, max_row=n_std + 1)
-    y_std = Reference(ws1, min_col=2, min_row=1, max_row=n_std + 1)
-    s_std = SeriesFactory(y_std, x_std)
-    s_std.marker.symbol = "circle"
-    s_std.marker.size = 8
-    s_std.graphicalProperties.line.noFill = True
-    chart.series.append(s_std)
+    chart.add_data(Reference(ws, min_col=2, min_row=1, max_row=n + 1),
+                   titles_from_data=True)
+    chart.add_data(Reference(ws, min_col=3, min_row=1, max_row=n + 1),
+                   titles_from_data=True)
+    chart.set_categories(Reference(ws, min_col=1, min_row=2, max_row=n + 1))
 
-    x_fit = Reference(ws2, min_col=1, min_row=2, max_row=101)
-    y_fit = Reference(ws2, min_col=2, min_row=1, max_row=101)
-    s_fit = SeriesFactory(y_fit, x_fit)
-    s_fit.marker.symbol = "none"
-    s_fit.graphicalProperties.line.solidFill = "378ADD"
-    chart.series.append(s_fit)
+    chart.series[0].marker.symbol = "circle"
+    chart.series[0].marker.size = 8
+    chart.series[1].smooth = True
+    chart.series[1].marker.symbol = "none"
 
-    if has_unknowns:
-        x_unk = Reference(ws4, min_col=3, min_row=2, max_row=len(valid) + 1)
-        y_unk = Reference(ws4, min_col=2, min_row=1, max_row=len(valid) + 1)
-        s_unk = SeriesFactory(y_unk, x_unk)
-        s_unk.marker.symbol = "diamond"
-        s_unk.marker.size = 10
-        s_unk.graphicalProperties.line.noFill = True
-        chart.series.append(s_unk)
-
-    ws1.add_chart(chart, "D2")
+    ws.add_chart(chart, "E2")
 
     buf = io.BytesIO()
     wb.save(buf)
