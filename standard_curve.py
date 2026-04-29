@@ -213,7 +213,7 @@ def build_excel_standard_chart(concentration, absorbance, fit_result,
 
     x_std = Reference(ws1, min_col=1, min_row=2, max_row=n_std + 1)
     y_std = Reference(ws1, min_col=2, min_row=1, max_row=n_std + 1)
-    s_std = Series(y_std, x_std, title_from_data=True)
+    s_std = Series(y_std, x_std, title="Standard Points")
     s_std.marker.symbol = "circle"
     s_std.marker.size = 8
     s_std.graphicalProperties.line.noFill = True
@@ -221,7 +221,7 @@ def build_excel_standard_chart(concentration, absorbance, fit_result,
 
     x_fit = Reference(ws2, min_col=1, min_row=2, max_row=101)
     y_fit = Reference(ws2, min_col=2, min_row=1, max_row=101)
-    s_fit = Series(y_fit, x_fit, title_from_data=True)
+    s_fit = Series(y_fit, x_fit, title="Fitted Curve")
     s_fit.marker.symbol = "none"
     s_fit.graphicalProperties.line.solidFill = "378ADD"
     chart.series.append(s_fit)
@@ -229,7 +229,7 @@ def build_excel_standard_chart(concentration, absorbance, fit_result,
     if has_unknowns:
         x_unk = Reference(ws4, min_col=3, min_row=2, max_row=len(valid) + 1)
         y_unk = Reference(ws4, min_col=2, min_row=1, max_row=len(valid) + 1)
-        s_unk = Series(y_unk, x_unk, title_from_data=True)
+        s_unk = Series(y_unk, x_unk, title="Unknown Samples")
         s_unk.marker.symbol = "diamond"
         s_unk.marker.size = 10
         s_unk.graphicalProperties.line.noFill = True
