@@ -147,7 +147,9 @@ def build_excel_standard_chart(concentration, absorbance, fit_result,
                                 assay_name, x_unit, y_unit, unknowns=None):
     import io
     from openpyxl import Workbook
-    from openpyxl.chart import ScatterChart, Reference, Series
+    from openpyxl.chart import ScatterChart
+from openpyxl.chart.reference import Reference
+from openpyxl.chart.series import Series
 
     x = np.array(concentration, dtype=float)
     y = np.array(absorbance, dtype=float)
@@ -182,7 +184,7 @@ def build_excel_standard_chart(concentration, absorbance, fit_result,
     ws3.append(["Assay", assay_name])
     ws3.append(["Model", fit_result["model"]])
     ws3.append(["Equation", fit_result["equation"]])
-    ws3.append(["R²", round(fit_result["r_squared"], 6)])
+    ws3.append(["R2", round(fit_result["r_squared"], 6)])
 
     has_unknowns = False
     if unknowns:
@@ -196,7 +198,7 @@ def build_excel_standard_chart(concentration, absorbance, fit_result,
 
     n_std = len(x)
     chart = ScatterChart()
-    chart.title = f"{assay_name} | {fit_result['equation']} | R²={fit_result['r_squared']:.4f}"
+    chart.title = f"{assay_name} | {fit_result['equation']} | R2={fit_result['r_squared']:.4f}"
     chart.style = 10
     chart.xAxis.title = f"Concentration ({x_unit})"
     chart.yAxis.title = f"Absorbance ({y_unit})"
