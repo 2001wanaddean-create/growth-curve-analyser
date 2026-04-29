@@ -1,6 +1,11 @@
+import io
 import numpy as np
 from scipy import stats
 import plotly.graph_objects as go
+from openpyxl import Workbook
+from openpyxl.chart import ScatterChart
+from openpyxl.chart.reference import Reference
+from openpyxl.chart.series import Series
 
 
 def fit_standard_curve(concentration, absorbance, model_type="linear"):
@@ -145,12 +150,6 @@ def build_standard_curve_figure(concentration, absorbance,
 
 def build_excel_standard_chart(concentration, absorbance, fit_result,
                                 assay_name, x_unit, y_unit, unknowns=None):
-    import io
-    from openpyxl import Workbook
-    from openpyxl.chart import ScatterChart
-from openpyxl.chart.reference import Reference
-from openpyxl.chart.series import Series
-
     x = np.array(concentration, dtype=float)
     y = np.array(absorbance, dtype=float)
 
@@ -158,8 +157,8 @@ from openpyxl.chart.series import Series
 
     ws1 = wb.active
     ws1.title = "Standard Data"
-    ws1["A1"] = f"Concentration ({x_unit})"
-    ws1["B1"] = f"Absorbance ({y_unit})"
+    ws1["A1"] = "Concentration ({})".format(x_unit)
+    ws1["B1"] = "Absorbance ({})".format(y_unit)
     for i, (c, a) in enumerate(zip(x, y), start=2):
         ws1.cell(i, 1, float(c))
         ws1.cell(i, 2, float(a))
@@ -167,14 +166,16 @@ from openpyxl.chart.series import Series
     ws2 = wb.create_sheet("Fitted Curve")
     x_sm = np.linspace(min(x), max(x) * 1.05, 100)
     if fit_result["model"] == "linear":
-        m, b = fit_result["params"]["slope"], fit_result["params"]["intercept"]
+        m = fit_result["params"]["slope"]
+        b = fit_result["params"]["intercept"]
         y_sm = m * x_sm + b
     else:
-        a_, b_, c_ = (fit_result["params"]["a"], fit_result["params"]["b"],
-                      fit_result["params"]["c"])
-        y_sm = a_ * x_sm ** 2 + b_ * x_sm + c_
-    ws2["A1"] = f"Concentration ({x_unit})"
-    ws2["B1"] = f"Absorbance ({y_unit}) fitted"
+        a_ = fit_result["params"]["a"]
+        b_ = fit_result["params"]["b"]
+        c_ = fit_result["params"]["c"]
+        y_sm = a_ * x_sm**2 + b_ * x_sm + c_
+    ws2["A1"] = "Concentration ({})".format(x_unit)
+    ws2["B1"] = "Absorbance ({}) fitted".format(y_unit)
     for i, (c, a) in enumerate(zip(x_sm, y_sm), start=2):
         ws2.cell(i, 1, float(c))
         ws2.cell(i, 2, float(a))
@@ -192,17 +193,23 @@ from openpyxl.chart.series import Series
         if valid:
             has_unknowns = True
             ws4 = wb.create_sheet("Unknown Samples")
-            ws4.append(["Sample", f"Absorbance ({y_unit})", f"Concentration ({x_unit})"])
+            ws4.append([
+                "Sample",
+                "Absorbance ({})".format(y_unit),
+                "Concentration ({})".format(x_unit)
+            ])
             for u in valid:
                 ws4.append([u["label"], u["absorbance"], u["concentration"]])
 
     n_std = len(x)
     chart = ScatterChart()
-    chart.title = f"{assay_name} | {fit_result['equation']} | R2={fit_result['r_squared']:.4f}"
+    chart.title = "{} | {} | R2={:.4f}".format(
+        assay_name, fit_result["equation"], fit_result["r_squared"])
     chart.style = 10
-    chart.xAxis.title = f"Concentration ({x_unit})"
-    chart.yAxis.title = f"Absorbance ({y_unit})"
-    chart.width, chart.height = 24, 14
+    chart.xAxis.title = "Concentration ({})".format(x_unit)
+    chart.yAxis.title = "Absorbance ({})".format(y_unit)
+    chart.width = 24
+    chart.height = 14
 
     x_std = Reference(ws1, min_col=1, min_row=2, max_row=n_std + 1)
     y_std = Reference(ws1, min_col=2, min_row=1, max_row=n_std + 1)
